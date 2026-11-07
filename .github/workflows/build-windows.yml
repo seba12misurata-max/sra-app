@@ -1,0 +1,488 @@
+# SRA — تطبيق Flutter (Android + Windows + Web)
+
+هذا تطبيق Flutter كامل لواجهة SRA، يعمل على **Android, Windows, و Web**
+من كود واحد، ويتصل بـ SRA Backend (الموجود في مجلد `backend/`).
+
+---
+
+## 0. ما هو موجود هنا الآن
+
+تم تجهيز **كود التطبيق الكامل (Dart)** في مجلد `lib/`:
+
+```
+flutter_app/
+├── lib/
+│   ├── main.dart              # نقطة الدخول
+│   ├── theme.dart              # نظام الألوان (داكن + كهرماني، مطابق للويب)
+│   ├── models/                 # نماذج البيانات (محادثة، رسالة، ذاكرة، ملف)
+│   ├── services/
+│   │   ├── api_service.dart    # الاتصال بـ Backend
+│   │   └── settings_service.dart # حفظ عنوان الخادم على الجهاز
+│   ├── screens/
+│   │   ├── home_screen.dart    # شاشة رئيسية تتكيف (Rail للديسكتوب / Bottom Bar للموبايل)
+│   │   ├── chat_screen.dart    # المحادثة + إدارة المحادثات
+│   │   ├── memory_screen.dart  # الذاكرة طويلة المدى
+│   │   ├── files_screen.dart   # الملفات والمكتبة
+│   │   └── settings_screen.dart # ضبط عنوان الخادم
+│   └── widgets/
+│       └── chat_bubble.dart
+├── pubspec.yaml
+├── analysis_options.yaml
+└── .gitignore
+```
+
+**ما هو غير موجود بعد**: مجلدات `android/`, `windows/`, `web/` (الخاصة
+بكل منصة). هذه المجلدات تحتوي على إعدادات بناء (Gradle, CMake, إلخ)
+**يجب أن تُولَّد تلقائياً بواسطة أداة Flutter نفسها** على جهازك،
+لأنها تعتمد بدقة على إصدار Flutter/Android SDK المثبت لديك — توليدها
+يدوياً قد ينتج ملفات غير متوافقة مع جهازك. الخطوة 2 أدناه تولّدها
+في ثوانٍ.
+
+---
+
+## 1. المتطلبات
+
+| المنصة | المتطلبات |
+|---|---|
+| عام | [Flutter SDK](https://docs.flutter.dev/get-started/install) (أحدث إصدار مستقر) |
+| Android | Android Studio + Android SDK (لتشغيل `flutter build apk`) |
+| Windows | Visual Studio 2022 مع "Desktop development with C++" (لتشغيل `flutter build windows`) |
+| Web | لا يحتاج شيئاً إضافياً (يستخدم Chrome للتجربة) |
+
+تحقق من جاهزية بيئتك:
+
+```bash
+flutter doctor
+```
+
+---
+
+## 2. إعداد المشروع لأول مرة
+
+من داخل مجلد `flutter_app`:
+
+```bash
+# 1) جلب الحزم (http, shared_preferences, file_picker, intl...)
+flutter pub get
+
+# 2) توليد مجلدات المنصات (Android, Windows, Web) المناسبة لجهازك
+flutter create --platforms=android,windows,web .
+```
+
+الأمر الثاني **لن يحذف أي كود من lib/** — فقط يضيف المجلدات الناقصة
+(`android/`, `windows/`, `web/`) مع الإعدادات الافتراضية الصحيحة.
+
+### تفعيل الاتصال بخادم محلي على Android (HTTP بدون SSL)
+
+بعد توليد مجلد `android/`، افتح:
+`android/app/src/main/AndroidManifest.xml`
+
+وأضف الخاصية `android:usesCleartextTraffic="true"` إلى عنصر
+`<application>` (مهم لأن SRA Backend يعمل عبر `http://` بدون شهادة
+SSL في مرحلة التطوير/الشبكة المنزلية):
+
+```xml
+<application
+    android:label="SRA"
+    android:usesCleartextTraffic="true"
+    ... >
+```
+
+> عند نشر نسخة إنتاجية حقيقية على الإنترنت، يُفضّل تشغيل الـ Backend
+> خلف HTTPS (مثلاً عبر Caddy أو Nginx + شهادة Let's Encrypt) وحذف هذه
+> الخاصية.
+
+---
+
+## 3. تشغيل الـ Backend أولاً
+
+تطبيق Flutter هو "واجهة" فقط — يحتاج SRA Backend (FastAPI) ليكون
+يعمل أولاً. من مجلد `backend/` (راجع `README.md` الرئيسي للتفاصيل):
+
+```bash
+cd ../backend
+source venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+> لاحظ استخدام `--host 0.0.0.0` بدل `127.0.0.1` — هذا ضروري ليتمكن
+> جهاز Android (أو أي جهاز آخر على الشبكة) من الوصول إلى الخادم.
+
+---
+
+## 4. ضبط عنوان الخادم في التطبيق
+
+عند أول تشغيل، افتح **الإعدادات (⚙)** من شريط التطبيق العلوي، وأدخل
+عنوان الخادم المناسب:
+
+| الحالة | العنوان |
+|---|---|
+| محاكي Android + الخادم على نفس الكمبيوتر | `http://10.0.2.2:8000` |
+| جهاز Android حقيقي على نفس شبكة Wi-Fi | `http://<IP الكمبيوتر>:8000` (مثال: `http://192.168.1.50:8000`) |
+| تطبيق Windows والخادم على نفس الكمبيوتر | `http://localhost:8000` |
+| تطبيق Web والخادم على نفس الكمبيوتر | `http://localhost:8000` |
+
+لمعرفة IP الكمبيوتر على الشبكة:
+- Windows: `ipconfig` (سطر "IPv4 Address")
+- macOS/Linux: `ifconfig` أو `ip addr`
+
+الإعداد يُحفظ على الجهاز (`shared_preferences`) ولا يحتاج إعادة كل مرة.
+
+---
+
+## 5. التشغيل أثناء التطوير
+
+```bash
+# عرض الأجهزة المتاحة (محاكي Android، Windows Desktop، Chrome...)
+flutter devices
+
+# التشغيل على جهاز/محاكي Android
+flutter run -d emulator-5554
+
+# التشغيل على Windows Desktop
+flutter run -d windows
+
+# التشغيل على المتصفح (Chrome)
+flutter run -d chrome
+```
+
+---
+
+## 6. البناء لنسخة إنتاجية
+
+### Android (APK)
+
+```bash
+flutter build apk --release
+```
+
+الناتج: `build/app/outputs/flutter-apk/app-release.apk`
+
+ثبّته على هاتفك مباشرة (نسخه عبر USB أو رابط) — أو لتوزيعه عبر
+Google Play استخدم بدلاً منه:
+
+```bash
+flutter build appbundle --release
+```
+
+الناتج: `build/app/outputs/bundle/release/app-release.aab`
+
+> **توقيع التطبيق**: لتوزيع APK خارج جهازك الشخصي، يجب توقيعه بمفتاح
+> توقيع (Keystore). راجع توثيق Flutter الرسمي حول
+> "Build and release an Android app" لإنشاء `key.properties` وإعداد
+> `android/app/build.gradle`. بدون توقيع، الـ APK يعمل فقط للتثبيت
+> اليدوي المباشر على جهازك (Debug/Release غير موقّع لا يُقبل في Play).
+
+### Windows (تطبيق سطح مكتب)
+
+```bash
+flutter build windows --release
+```
+
+الناتج: مجلد كامل في `build/windows/x64/runner/Release/`
+يحتوي على `sra_app.exe` وكل المكتبات المطلوبة (`.dll`). لتوزيعه،
+انسخ المجلد كاملاً (أو غلّفه في مُثبِّت باستخدام أداة مثل Inno Setup).
+
+### Web
+
+```bash
+flutter build web --release
+```
+
+الناتج: مجلد `build/web/` — يحتوي على ملفات ثابتة (HTML/JS/CSS)
+يمكن رفعها على أي استضافة (Nginx, Cloudflare Pages, Netlify, GitHub
+Pages...). تذكر أن المتصفح سيتصل بـ Backend عبر العنوان المضبوط في
+شاشة الإعدادات — إذا كان الـ Backend على خادم بعيد، يجب أن يكون
+متاحاً عبر `https://` أيضاً (المتصفحات تمنع طلبات HTTP من صفحة HTTPS).
+
+---
+
+## 7. ملاحظات إنتاجية مهمة
+
+1. **هذه نسخة لمستخدم واحد (شخصية)** — لا يوجد نظام تسجيل دخول/مستخدمين
+   متعددين بعد. إن أردت نشرها على خادم يصل إليه أكثر من جهاز لك (هاتف +
+   كمبيوتر)، يكفي أن يعمل Backend واحد على عنوان IP/دومين ثابت، وكل
+   أجهزتك تشير إليه من شاشة الإعدادات.
+2. **الأمان**: إن نشرت الـ Backend على الإنترنت (ليس فقط شبكتك
+   المنزلية)، أضف:
+   - HTTPS (عبر Nginx/Caddy + Let's Encrypt).
+   - مصادقة (API Key أو JWT) على مسارات الـ API — حالياً لا توجد
+     مصادقة لأن المشروع شخصي ومخصص للشبكة المحلية.
+3. **التحديثات المستقبلية**: عند إضافة الصوت أو البحث الأكاديمي إلى
+   الـ Backend، تُضاف شاشات/أزرار جديدة في `lib/screens` بنفس الطريقة
+   دون التأثير على باقي التطبيق.
+
+# =============================================================
+#  SRA — سكريبت الإعداد لنظام Windows (PowerShell)
+#  شغّله مرة واحدة بعد فك ضغط المشروع
+#  التشغيل: Right-click > "Run with PowerShell"
+#  أو من PowerShell:  cd flutter_app; .\setup.ps1
+# =============================================================
+
+Write-Host ""
+Write-Host "  SRA - Setup Script" -ForegroundColor Cyan
+Write-Host "  إعداد مشروع Flutter كامل" -ForegroundColor Cyan
+Write-Host ""
+
+# ---------- 1. التحقق من Flutter ----------
+Write-Host "[SRA] فحص Flutter SDK..." -ForegroundColor Blue
+try {
+    $flutterVer = (flutter --version 2>&1)[0]
+    Write-Host "[✓] $flutterVer" -ForegroundColor Green
+} catch {
+    Write-Host "[✗] Flutter غير مثبت!" -ForegroundColor Red
+    Write-Host "    حمّله من: https://flutter.dev/docs/get-started/install"
+    exit 1
+}
+
+# ---------- 2. تفعيل المنصات ----------
+Write-Host "[SRA] تفعيل Windows Desktop..." -ForegroundColor Blue
+flutter config --enable-windows-desktop | Out-Null
+
+Write-Host "[SRA] تفعيل Web..." -ForegroundColor Blue
+flutter config --enable-web | Out-Null
+
+# ---------- 3. توليد gradle-wrapper.jar ----------
+$WrapperJar = "android\gradle\wrapper\gradle-wrapper.jar"
+$jarInfo = Get-Item $WrapperJar -ErrorAction SilentlyContinue
+if ($null -eq $jarInfo -or $jarInfo.Length -lt 1000) {
+    Write-Host "[SRA] توليد gradle-wrapper.jar..." -ForegroundColor Blue
+    $tmpDir = [System.IO.Path]::GetTempPath() + "sra_tmp_" + [System.Guid]::NewGuid().ToString()
+    flutter create --quiet --platforms=android $tmpDir\tmp_project 2>&1 | Out-Null
+    Copy-Item "$tmpDir\tmp_project\android\gradle\wrapper\gradle-wrapper.jar" $WrapperJar
+    Remove-Item $tmpDir -Recurse -Force
+    Write-Host "[✓] gradle-wrapper.jar تم توليده" -ForegroundColor Green
+} else {
+    Write-Host "[✓] gradle-wrapper.jar موجود" -ForegroundColor Green
+}
+
+# ---------- 4. جلب الحزم ----------
+Write-Host "[SRA] جلب حزم Dart..." -ForegroundColor Blue
+flutter pub get
+Write-Host "[✓] الحزم جاهزة" -ForegroundColor Green
+
+# ---------- 5. رسالة ختامية ----------
+Write-Host ""
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+Write-Host "[✓] الإعداد اكتمل! الخطوات التالية:" -ForegroundColor Green
+Write-Host ""
+Write-Host "  شغّل الخادم أولاً (من مجلد backend):"
+Write-Host "    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+Write-Host ""
+Write-Host "  ثم ابنِ التطبيق:"
+Write-Host "    flutter build apk --release        (APK لأندرويد)"
+Write-Host "    flutter build windows --release    (تطبيق Windows)"
+Write-Host "    flutter build web --release        (تطبيق Web)"
+Write-Host ""
+Write-Host "  للتشغيل المباشر:"
+Write-Host "    flutter devices    (لرؤية الأجهزة)"
+Write-Host "    flutter run        (تشغيل على الجهاز المحدد)"
+Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Cyan
+
+#!/usr/bin/env bash
+# =============================================================
+#  SRA — سكريبت الإعداد الكامل
+#  شغّله مرة واحدة فقط بعد فك ضغط الملف
+#  يعمل على: Linux / macOS / Windows (Git Bash أو WSL)
+# =============================================================
+set -e
+
+BLUE='\033[0;34m'; GREEN='\033[0;32m'; RED='\033[0;31m'; NC='\033[0m'
+info()  { echo -e "${BLUE}[SRA]${NC} $1"; }
+ok()    { echo -e "${GREEN}[✓]${NC} $1"; }
+fail()  { echo -e "${RED}[✗]${NC} $1"; exit 1; }
+
+echo ""
+echo "  ███████╗██████╗  █████╗ "
+echo "  ██╔════╝██╔══██╗██╔══██╗"
+echo "  ███████╗██████╔╝███████║"
+echo "  ╚════██║██╔══██╗██╔══██║"
+echo "  ███████║██║  ██║██║  ██║"
+echo "  ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝"
+echo "   إعداد مشروع Flutter كامل"
+echo ""
+
+# ---------- 1. التحقق من Flutter ----------
+info "فحص Flutter SDK..."
+if ! command -v flutter &>/dev/null; then
+  fail "Flutter غير مثبت! حمّله من: https://flutter.dev/docs/get-started/install"
+fi
+ok "Flutter: $(flutter --version --machine 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d["frameworkVersion"])' 2>/dev/null || flutter --version | head -1)"
+
+# ---------- 2. تفعيل المنصات ----------
+info "تفعيل منصة Windows Desktop..."
+flutter config --enable-windows-desktop &>/dev/null || true
+
+info "تفعيل منصة Web..."
+flutter config --enable-web &>/dev/null || true
+
+# ---------- 3. توليد gradle-wrapper.jar الحقيقي ----------
+# Flutter يحتاج هذا الملف لبناء تطبيق أندرويد
+WRAPPER_JAR="android/gradle/wrapper/gradle-wrapper.jar"
+if [ ! -s "$WRAPPER_JAR" ] || [ "$(wc -c < "$WRAPPER_JAR")" -lt 1000 ]; then
+  info "توليد gradle-wrapper.jar..."
+  # استخدام flutter لإنشاء مشروع مؤقت واستخراج الـ jar منه
+  TMPDIR_FLUTTER=$(mktemp -d)
+  flutter create --quiet --platforms=android "$TMPDIR_FLUTTER/tmp_project" &>/dev/null
+  cp "$TMPDIR_FLUTTER/tmp_project/android/gradle/wrapper/gradle-wrapper.jar" "$WRAPPER_JAR"
+  rm -rf "$TMPDIR_FLUTTER"
+  ok "gradle-wrapper.jar تم توليده"
+else
+  ok "gradle-wrapper.jar موجود"
+fi
+
+# ---------- 4. جلب الحزم ----------
+info "جلب حزم Dart (flutter pub get)..."
+flutter pub get
+ok "الحزم جاهزة"
+
+# ---------- 5. رسالة ختامية ----------
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+ok "الإعداد اكتمل! الخطوة التالية:"
+echo ""
+echo "  شغّل الخادم أولاً (من مجلد backend):"
+echo "    uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+echo ""
+echo "  ثم ابنِ التطبيق:"
+echo "    APK لأندرويد  :  flutter build apk --release"
+echo "    تطبيق Windows  :  flutter build windows --release"
+echo "    تطبيق Web      :  flutter build web --release"
+echo ""
+echo "  أو للتشغيل المباشر أثناء التطوير:"
+echo "    flutter devices   ← لرؤية الأجهزة"
+echo "    flutter run       ← تشغيل على الجهاز/المحاكي"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+# 🚀 كيف تحصل على APK في 10 دقائق — Windows 7
+
+## الخطوات بالترتيب:
+
+### 1. أنشئ حساب GitHub مجاني
+https://github.com/signup
+
+### 2. أنشئ repository جديد
+- اذهب إلى: https://github.com/new
+- اسمه: `sra-app`
+- اتركه Public أو Private (كلاهما يعمل مع Actions)
+- اضغط **Create repository**
+
+### 3. ارفع الملفات
+**الطريقة السهلة (بدون Git):**
+1. افتح الـ repository على GitHub
+2. اضغط **Add file** → **Upload files**
+3. اسحب كل محتوى مجلد `flutter_app/` وأسقطه في الصفحة
+4. اضغط **Commit changes**
+
+### 4. GitHub Actions يبدأ تلقائياً
+- اذهب إلى تبويب **Actions** في الـ repository
+- ستجد workflow اسمه **Build SRA APK** يعمل
+- انتظر 10-15 دقيقة حتى ينتهي (شريط أخضر ✅)
+
+### 5. حمّل APK
+- اضغط على الـ workflow Run المكتمل
+- في أسفل الصفحة: **Artifacts**
+- حمّل **SRA-v1.0-arm64** (للهواتف الحديثة)
+- أو **SRA-v1.0-universal** (يعمل على الكل)
+
+### 6. ثبّت على هاتفك
+1. انقل APK للهاتف (USB أو واتساب لنفسك)
+2. إعدادات الهاتف → الأمان → **مصادر غير معروفة** ✓
+3. افتح ملف APK وثبّته
+4. افتح SRA ← أيقونة ⚙ ← أدخل عنوان خادم Backend
+
+---
+
+## ⚠️ مهم قبل الرفع
+
+تأكد أن هيكل المجلدات هكذا في GitHub:
+```
+/ (root of repository)
+├── .github/
+│   └── workflows/
+│       └── build-apk.yml   ← هذا يشغّل البناء
+├── android/
+├── lib/
+├── pubspec.yaml
+└── ...
+```
+
+**لا ترفع مجلد flutter_app كـ parent** — ارفع محتواه مباشرة.
+
+---
+
+## بدل GitHub: Codemagic (أسهل)
+
+1. https://codemagic.io → سجّل بحساب GitHub
+2. اختر مشروعك
+3. اختر **Flutter App**
+4. اضغط **Start new build**
+5. حمّل APK من النتائج
+
+
+# Dart/Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/
+*.lock
+*.log
+
+# Android
+android/local.properties
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+*.apk
+*.aab
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/flutter_export_environment.sh
+
+# env / secrets
+.env
+*.key
+*.jks
+*.keystore
+key.properties
+
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    prefer_const_constructors: true
+    prefer_const_literals_to_create_immutables: true
+
+name: sra_app
+description: "SRA - التوأم الرقمي الشخصي"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+  file_picker: ^8.1.2
+  intl: ^0.19.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
